@@ -1,28 +1,24 @@
-/** This example uses the Zumo's line sensors to detect the white
-border around a sumo ring.  When the border is detected, it
-backs up and turns. */
-
+// This code was based on the border control code
 #include <Wire.h>
 #include <Zumo32U4.h>
 #include <Zumo32U4IMU.h>
+#include <SD.h>
+#include <SPI.h>
 
-// This might need to be tuned for different lighting conditions,
-// surfaces, etc.
-#define QTR_THRESHOLD 1000 // microseconds
-#define HIT_INTERVAL = 1000;
+#define QTR_THRESHOLD 1000 // ms
 
-#define REVERSE_SPEED 100 // 0 is stopped, 400 is full speed
-#define TURN_SPEED 100
-#define FORWARD_SPEED 150
+#define REVERSE_SPEED 100    // ms
+#define TURN_SPEED 100       // ms
+#define FORWARD_SPEED 150    // ms
 #define REVERSE_DURATION 200 // ms
 #define TURN_DURATION 600    // ms
 #define DROP_PARCEL_OFF 2000 // ms
 
-unsigned long lastLeftHitTime = 0;
-unsigned long lastRightHitTime = 0;
+#define HIT_INTERVAL 1000 // ms
 
-// Change next line to this if you are using the older Zumo 32U4
-// with a black and green LCD display:
+unsigned long lastLeftHitTime = 0;  // Left Sensor Hit
+unsigned long lastRightHitTime = 0; // Right Sensor Hit
+
 Zumo32U4ButtonA buttonA;
 Zumo32U4Buzzer buzzer;
 Zumo32U4Motors motors;
@@ -34,23 +30,22 @@ Zumo32U4LCD display;
 #define NUM_SENSORS 3
 unsigned int lineSensorValues[NUM_SENSORS];
 
-const uint8_t sensorThreshold = 6;
-uint8_t houseFinder = 2;
-uint8_t rightTurn = 0;
-uint8_t leftTurn = 0;
+const uint8_t sensorThreshold = 6; // detect objects
+uint8_t houseFinder = 2;           // Houses to be delivered too
+uint8_t rightTurn = 0;             // count right turns
+uint8_t leftTurn = 0;              // count left Turns
 
 char path[1000];
 uint8_t pathLength = 0;
 
+// this function is simply used to count down before the robot explores a maze
 void waitForButtonAndCountDown()
 {
-  ledYellow(1);
   display.clear();
   display.println(F("Press A"));
 
   buttonA.waitForButton();
 
-  ledYellow(0);
   display.clear();
 
   // Play audible countdown.
@@ -64,6 +59,7 @@ void waitForButtonAndCountDown()
   delay(1000);
 }
 
+// This function is used to drop of the parcel when a house is discovered, then turns out of the room
 void detectedObject()
 {
   buzzer.playNote(NOTE_G(4), 500, 15);
@@ -77,6 +73,7 @@ void detectedObject()
   delay(REVERSE_DURATION);                         // Delay to reverse
 }
 
+// this function uses the path history to try and navigate back out of the maze to the start by using the path and reversing.
 void findMyWayHome()
 {
   for (int i = pathLength - 1; i >= 0; --i)
@@ -86,6 +83,7 @@ void findMyWayHome()
   }
 }
 
+// this function is not correctly implemented but the idea is that the directions would be reversed to the orginal direction
 void reverseDirection(char direction)
 {
   switch (direction)
@@ -113,12 +111,12 @@ void reverseDirection(char direction)
     motors.setSpeeds(-FORWARD_SPEED, FORWARD_SPEED); // Reverse after rotation
     delay(REVERSE_DURATION);                         // Delay to reverse
     break;
-    break;
   default:
     break;
   }
 }
 
+// turn's the robot in the direction that is put in
 void direction(char direction)
 {
   switch (direction)
@@ -156,18 +154,19 @@ void direction(char direction)
     rightTurn = 0;
     addDirection('T');
     break;
-    break;
   default:
     break;
   }
 }
 
+// add the direction to the path history
 void addDirection(char direction)
 {
   path[pathLength] = direction;
   pathLength++;
 }
 
+// informs the user that all parcels have been delivered
 void printDelivered()
 {
   display.print("All Parcels");
@@ -203,8 +202,7 @@ void loop()
   uint8_t leftValue = proxSensors.countsFrontWithLeftLeds();
   uint8_t rightValue = proxSensors.countsFrontWithRightLeds();
 
-  bool objectSeen = 0;
-  objectSeen = leftValue >= sensorThreshold && rightValue >= sensorThreshold;
+  bool objectSeen = leftValue >= sensorThreshold && rightValue >= sensorThreshold;
 
   lineSensors.read(lineSensorValues);
 
@@ -214,16 +212,13 @@ void loop()
     --houseFinder;
     if (houseFinder == 0)
     {
-      // findMyWayHome();
       motors.setSpeeds(0, 0);
       buzzer.playNote(NOTE_G(4), 500, 15);
       printDelivered();
-      while (1 == 1)
-      {
-      }
+      findMyWayHome();
     }
   }
-  else if ((millis() - lastRightHitTime < 1000) && (millis() - lastLeftHitTime < 1000))
+  else if ((millis() - lastRightHitTime < HIT_INTERVAL) && (millis() - lastLeftHitTime < HIT_INTERVAL))
   {
     direction('T');
     lastRightHitTime = 0;
@@ -233,11 +228,8 @@ void loop()
   {
     direction('T');
   }
-
   else if (lineSensorValues[0] > QTR_THRESHOLD)
   {
-    // If leftmost sensor detects line, reverse and turn to the
-    // right.
     direction('R');
   }
   else if (lineSensorValues[1] > QTR_THRESHOLD)
